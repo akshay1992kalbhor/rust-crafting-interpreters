@@ -6,19 +6,45 @@ use std::fmt::Display;
 enum TokenType {
     LeftParen,
     RightParen,
+    LeftBrace,
+    RightBrace,
     Semicolon,
+    Comma,
+    Dot,
+    Minus,
+    Plus,
+    Slash,
+    Star,
 
+    Bang, // !
+    BangEqual,
+    EqualEqual,
     Equal,
     Greater,
+    GreaterEqual,
+    Less,
+    LessEqual,
 
     Identifier(String),
     Number(i32),
     String(String),
 
-    And,
+    And, //and
     Else,
-    Class,
+    False,
+    Fun,
+    Class, // class
     Var,
+    For,
+    If,
+    Nil,
+    Or,
+    Print,
+    Return,
+    Super,
+    This,
+    True,
+    While,
 
     Eof,
 }
@@ -107,13 +133,32 @@ impl fmt::Display for ScannerError {
 }
 
 impl Scanner {
-    fn new(source: &str) -> Self {
+    fn new() -> Self {
         Scanner {
-            source: String::from(source),
+            source: String::new(),
             current: 0,
             line: 0,
             tokens: vec![],
             keywords: Keywords::new(),
+        }
+    }
+
+    fn run_file(&mut self, source: &str) {
+        self.source = String::from(source);
+        let tokens = self.scan_tokens();
+        for (i, t) in tokens.iter().enumerate() {
+            println!("{}: {:?}", i, t);
+        }
+    }
+
+    fn run_prompt(&mut self) {
+        println!("Running Lox Interpreter v1.0");
+        let mut input = String::new();
+        loop {
+            print!(">> ");
+            std::io::Write::flush(&mut std::io::stdout()).expect("Flush failed");
+            std::io::stdin().read_line(&mut input).unwrap();
+            print!("You typed: {}", input);
         }
     }
 
@@ -142,6 +187,10 @@ impl Scanner {
         self.tokens.push(Token::new(token_type, self.line));
     }
 
+    fn peek(&mut self) -> char {
+        self.source.chars().nth(self.current + 1).unwrap()
+    }
+
     fn scan_token(&mut self) -> Result<(), ScannerError> {
         // TODO: Make sure you exit the two loops safely when the last char is not a newline
         let mut current_c = self.advance();
@@ -153,6 +202,7 @@ impl Scanner {
                 identifier.push(current_c);
                 current_c = self.advance()
             }
+            self.backtrack(1);
             if self.keywords.keywords.contains_key(&identifier) {
                 tt = self.keywords.keywords.get(&identifier).unwrap().clone();
             } else {
@@ -163,15 +213,36 @@ impl Scanner {
             let mut number = String::new();
             while is_digit(current_c) {
                 number.push(current_c);
-                self.current += 1;
-                current_c = self.source.chars().nth(self.current).unwrap();
+                current_c = self.advance();
             }
+            self.backtrack(1);
             tt = TokenType::Number(number.parse::<i32>().unwrap());
             self.add_token(tt);
         } else {
+            // <=, !=, >=, ==
             let r = match current_c {
                 ';' => Ok(self.add_token(TokenType::Semicolon)),
-                '=' => Ok(self.add_token(TokenType::Equal)),
+                '=' | '<' | '>' | '!' => {
+                    if self.peek() == '=' {
+                        let r1 = match current_c {
+                            '=' => Ok(self.add_token(TokenType::EqualEqual)),
+                            '<' => Ok(self.add_token(TokenType::LessEqual)),
+                            '>' => Ok(self.add_token(TokenType::GreaterEqual)),
+                            '!' => Ok(self.add_token(TokenType::BangEqual)),
+                            _ => Err(ScannerError { line: self.line }),
+                        };
+                        r1
+                    } else {
+                        match current_c {
+                            '=' => self.add_token(TokenType::Equal),
+                            '<' => self.add_token(TokenType::Less),
+                            '>' => self.add_token(TokenType::Greater),
+                            '!' => self.add_token(TokenType::Bang),
+                            _ => unreachable!(),
+                        }
+                        Ok(())
+                    }
+                }
                 ' ' | '\t' => Ok(()),
                 '\n' => Ok(self.line += 1),
                 '"' => {
@@ -205,15 +276,17 @@ impl Scanner {
 
 fn main() {
     let args = std::env::args().collect::<Vec<String>>();
-    assert!(args.len() > 1);
 
-    let file = std::fs::read_to_string(&args[1]).unwrap();
-    let mut scanner = Scanner::new(&file);
-    let tokens = scanner.scan_tokens();
+    let mut scanner = Scanner::new();
 
-    for (i, t) in tokens.iter().enumerate() {
-        println!("{}: {:?}", i, t);
+    if args.len() > 1 {
+        // TODO: Where do you handle errors?
+        let file = std::fs::read_to_string(&args[1]).unwrap();
+        scanner.run_file(&file);
+        return;
     }
+
+    scanner.run_prompt();
 }
 
 // var language = "lox";
