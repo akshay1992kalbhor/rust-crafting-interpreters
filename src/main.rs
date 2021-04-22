@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fmt::Display;
 
 #[derive(Debug, Clone)]
@@ -6,13 +7,13 @@ enum TokenType {
     LeftParen,
     RightParen,
     Semicolon,
-    DoubleQuotes,
 
     Equal,
     Greater,
 
     Identifier(String),
     Number(i32),
+    String(String),
 
     And,
     Else,
@@ -74,7 +75,6 @@ impl Token {
     }
 }
 
-use std::fmt;
 impl Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!("TOKEN"))
@@ -95,6 +95,17 @@ struct Scanner {
     keywords: Keywords,
 }
 
+#[derive(Debug, Clone)]
+struct ScannerError {
+    line: usize,
+}
+
+impl fmt::Display for ScannerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Unexpected character")
+    }
+}
+
 impl Scanner {
     fn new(source: &str) -> Self {
         Scanner {
@@ -108,64 +119,83 @@ impl Scanner {
 
     fn scan_tokens(&mut self) -> Vec<Token> {
         while !self.is_at_end() {
-            let _ = self.scan_token();
+            let result = self.scan_token();
         }
 
-        self.tokens.push(Token::new(TokenType::Eof, self.line));
+        // TODO: Should EOF be on a separate line?
+        self.add_token(TokenType::Eof);
         return self.tokens.clone();
     }
 
-    fn scan_token(&mut self) -> usize {
-        let mut current_c = self.source.chars().nth(self.current).unwrap();
-        let mut total_consumed = 0usize;
+    fn advance(&mut self) -> char {
+        // TODO: Substitute advance in the right places
+        let char = self.source.chars().nth(self.current).unwrap();
+        self.current += 1;
+        char
+    }
+
+    fn backtrack(&mut self, amt: usize) {
+        self.current -= amt;
+    }
+
+    fn add_token(&mut self, token_type: TokenType) {
+        self.tokens.push(Token::new(token_type, self.line));
+    }
+
+    fn scan_token(&mut self) -> Result<(), ScannerError> {
+        // TODO: Make sure you exit the two loops safely when the last char is not a newline
+        let mut current_c = self.advance();
+        let tt: TokenType;
 
         if is_alpha(current_c) {
             let mut identifier = String::new();
             while is_alpha_numeric(current_c) {
-                total_consumed += 1;
                 identifier.push(current_c);
-                self.current += 1;
-                current_c = self.source.chars().nth(self.current).unwrap();
-                //println!("{:?}", current_c);
+                current_c = self.advance()
             }
-            let t: Token;
             if self.keywords.keywords.contains_key(&identifier) {
-                t = Token::new(
-                    self.keywords.keywords.get(&identifier).unwrap().clone(),
-                    self.line,
-                );
+                tt = self.keywords.keywords.get(&identifier).unwrap().clone();
             } else {
-                t = Token::new(TokenType::Identifier(identifier), self.line);
+                tt = TokenType::Identifier(identifier);
             }
-            self.tokens.push(t);
+            self.add_token(tt);
         } else if is_digit(current_c) {
             let mut number = String::new();
             while is_digit(current_c) {
-                total_consumed += 1;
                 number.push(current_c);
                 self.current += 1;
                 current_c = self.source.chars().nth(self.current).unwrap();
             }
-            self.tokens.push(Token::new(
-                TokenType::Number(number.parse::<i32>().unwrap()),
-                self.line,
-            ));
+            tt = TokenType::Number(number.parse::<i32>().unwrap());
+            self.add_token(tt);
         } else {
-            total_consumed += 1;
-            self.current += 1;
-            match current_c {
-                '"' => self
-                    .tokens
-                    .push(Token::new(TokenType::DoubleQuotes, self.line)),
-                ';' => self
-                    .tokens
-                    .push(Token::new(TokenType::Semicolon, self.line)),
-                '=' => self.tokens.push(Token::new(TokenType::Equal, self.line)),
-                ' ' | '\n' | '\t' => (),
-                _ => unreachable!("Invalid token"),
-            }
+            let r = match current_c {
+                ';' => Ok(self.add_token(TokenType::Semicolon)),
+                '=' => Ok(self.add_token(TokenType::Equal)),
+                ' ' | '\t' => Ok(()),
+                '\n' => Ok(self.line += 1),
+                '"' => {
+                    // TODO: Add support for other ascii characters
+                    let mut identifier = String::new();
+                    loop {
+                        current_c = self.advance();
+                        if is_alpha_numeric(current_c) {
+                            identifier.push(current_c);
+                        } else if current_c == '"' {
+                            break;
+                        } else {
+                            return Err(ScannerError { line: self.line });
+                        }
+                    }
+                    tt = TokenType::String(identifier);
+                    self.add_token(tt);
+                    Ok(())
+                }
+                _ => Err(ScannerError { line: self.line }),
+            };
+            return r;
         }
-        total_consumed
+        Ok(())
     }
 
     fn is_at_end(&self) -> bool {
@@ -184,11 +214,6 @@ fn main() {
     for (i, t) in tokens.iter().enumerate() {
         println!("{}: {:?}", i, t);
     }
-    /*let t = Token {
-        token_type: TokenType::String(String::from("lox")),
-        line: 0,
-        lexeme: String::from("lox"),
-    };*/
 }
 
 // var language = "lox";
